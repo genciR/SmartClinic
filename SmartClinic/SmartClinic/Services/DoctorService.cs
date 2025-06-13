@@ -1,7 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
-using SmartClinic.Models.DTOs;
-using SmartClinic.Data;
+﻿using SmartClinic.Models.DTOs;
 using SmartClinic.Models.Entities;
+using SmartClinic.Repositories;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,11 +10,11 @@ namespace SmartClinic.Services
 {
     public class DoctorService : IDoctorService
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IDoctorRepository _doctorRepository;
 
-        public DoctorService(ApplicationDbContext context)
+        public DoctorService(IDoctorRepository doctorRepository)
         {
-            _context = context;
+            _doctorRepository = doctorRepository;
         }
 
         public async Task<DoctorDto> CreateDoctorAsync(DoctorCreateDto createDto)
@@ -39,13 +38,12 @@ namespace SmartClinic.Services
                 WorkingDays = createDto.WorkingDays,
                 StartTime = createDto.StartTime,
                 EndTime = createDto.EndTime,
-                BreakStartTime = createDto.BreakStartTime, // No cast needed
-                BreakEndTime = createDto.BreakEndTime     // No cast needed
+                BreakStartTime = createDto.BreakStartTime,
+                BreakEndTime = createDto.BreakEndTime,
+                User = user
             };
 
-            _context.Users.Add(user);
-            _context.Doctors.Add(doctor);
-            await _context.SaveChangesAsync();
+            await _doctorRepository.AddDoctorAsync(doctor);
 
             return new DoctorDto
             {
@@ -60,12 +58,9 @@ namespace SmartClinic.Services
             };
         }
 
-        public async Task<DoctorDto> GetDoctorByIdAsync(Guid id)
+        public async Task<DoctorDto?> GetDoctorByIdAsync(Guid id)
         {
-            var doctor = await _context.Doctors
-                .Include(d => d.User)
-                .FirstOrDefaultAsync(d => d.DoctorId == id);
-
+            var doctor = await _doctorRepository.GetDoctorByIdAsync(id);
             if (doctor == null)
                 return null;
 
@@ -84,28 +79,23 @@ namespace SmartClinic.Services
 
         public async Task<IEnumerable<DoctorDto>> GetAllDoctorsAsync()
         {
-            return await _context.Doctors
-                .Include(d => d.User)
-                .Select(d => new DoctorDto
-                {
-                    DoctorId = d.DoctorId,
-                    Name = $"{d.User.FirstName} {d.User.LastName}",
-                    Specialization = d.Specialization,
-                    WorkingDays = d.WorkingDays,
-                    StartTime = d.StartTime,
-                    EndTime = d.EndTime,
-                    BreakStartTime = d.BreakStartTime,
-                    BreakEndTime = d.BreakEndTime
-                })
-                .ToListAsync();
+            var doctors = await _doctorRepository.GetAllDoctorsAsync();
+            return doctors.Select(d => new DoctorDto
+            {
+                DoctorId = d.DoctorId,
+                Name = $"{d.User.FirstName} {d.User.LastName}",
+                Specialization = d.Specialization,
+                WorkingDays = d.WorkingDays,
+                StartTime = d.StartTime,
+                EndTime = d.EndTime,
+                BreakStartTime = d.BreakStartTime,
+                BreakEndTime = d.BreakEndTime
+            });
         }
 
-        public async Task<DoctorDto> UpdateDoctorAsync(Guid id, DoctorUpdateDto updateDto)
+        public async Task<DoctorDto?> UpdateDoctorAsync(Guid id, DoctorUpdateDto updateDto)
         {
-            var doctor = await _context.Doctors
-                .Include(d => d.User)
-                .FirstOrDefaultAsync(d => d.DoctorId == id);
-
+            var doctor = await _doctorRepository.GetDoctorByIdAsync(id);
             if (doctor == null)
                 return null;
 
@@ -116,7 +106,7 @@ namespace SmartClinic.Services
             doctor.BreakStartTime = updateDto.BreakStartTime;
             doctor.BreakEndTime = updateDto.BreakEndTime;
 
-            await _context.SaveChangesAsync();
+            await _doctorRepository.UpdateDoctorAsync(doctor);
 
             return new DoctorDto
             {
@@ -133,13 +123,55 @@ namespace SmartClinic.Services
 
         public async Task<bool> DeleteDoctorAsync(Guid id)
         {
-            var doctor = await _context.Doctors.FindAsync(id);
-            if (doctor == null)
-                return false;
+            return await _doctorRepository.DeleteDoctorAsync(id);
+        }
 
-            _context.Doctors.Remove(doctor);
-            await _context.SaveChangesAsync();
-            return true;
+        public async Task<DoctorAvailabilityDto> GetDoctorAvailabilityAsync(Guid doctorId, DateTime date)
+        {
+            var doctor = await _doctorRepository.GetDoctorByIdAsync(doctorId);
+            if (doctor == null)
+                throw new KeyNotFoundException($"Doctor with ID {doctorId} not found.");
+
+            var dayOfWeek = date.DayOfWeek;
+            if (!doctor.WorkingDays.Contains(dayOfWeek))
+                return new DoctorAvailabilityDto { Date = date.Date, AvailableSlots = new List<TimeSlotDto>() };
+
+            var appointments = await _doctorRepository.GetAppointmentsByDoctorAndDateAsync(doctorId, date);
+
+            var slots = new List<TimeSlotDto>();
+            var startDateTime = date.Date + doctor.StartTime;
+            var endDateTime = date.Date + doctor.EndTime;
+            var slotDuration = TimeSpan.FromMinutes(30);
+
+            for (var current = startDateTime; current < endDateTime; current += slotDuration)
+            {
+                if (doctor.BreakStartTime.HasValue && doctor.BreakEndTime.HasValue)
+                {
+                    var breakStart = date.Date + doctor.BreakStartTime.Value;
+                    var breakEnd = date.Date + doctor.BreakEndTime.Value;
+                    if (current >= breakStart && current < breakEnd)
+                        continue;
+                }
+
+                var slotEnd = current + slotDuration;
+                bool isOverlapping = appointments.Any(a =>
+                    a.StartTime < slotEnd && a.EndTime > current);
+
+                if (!isOverlapping)
+                {
+                    slots.Add(new TimeSlotDto
+                    {
+                        StartTime = current,
+                        EndTime = slotEnd
+                    });
+                }
+            }
+
+            return new DoctorAvailabilityDto
+            {
+                Date = date.Date,
+                AvailableSlots = slots
+            };
         }
     }
 }

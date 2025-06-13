@@ -35,7 +35,19 @@ namespace SmartClinic.Controllers
                 return NotFound();
             return Ok(doctor);
         }
-
+        [HttpGet("{id}/availability")]
+        public async Task<ActionResult<DoctorAvailabilityDto>> GetDoctorAvailability(Guid id, [FromQuery] DateTime date)
+        {
+            try
+            {
+                var availability = await _doctorService.GetDoctorAvailabilityAsync(id, date);
+                return Ok(availability);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+        }
         // GET: api/doctors
         [HttpGet]
         public async Task<ActionResult<IEnumerable<DoctorDto>>> GetAllDoctors()

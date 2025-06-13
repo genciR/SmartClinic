@@ -1,6 +1,7 @@
 
 using Microsoft.EntityFrameworkCore;
 using SmartClinic.Data;
+using SmartClinic.Repositories;
 using SmartClinic.Services;
 using System.Text.Json.Serialization;
 
@@ -22,7 +23,7 @@ namespace SmartClinic
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-
+            builder.Services.AddScoped<IDoctorRepository, DoctorRepository>();
             builder.Services.AddScoped<IDoctorService, DoctorService>();
             builder.Services.AddOpenApi();
 
