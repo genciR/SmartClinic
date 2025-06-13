@@ -1,0 +1,28 @@
+# Ignore build output and user-specific files
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# ASP.NET Core secrets
+**/secrets.json
+
+# Publish output
+publish/
+out/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Other
+*.db
+*.sqlite
