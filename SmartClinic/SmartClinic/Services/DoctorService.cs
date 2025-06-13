@@ -141,10 +141,11 @@ namespace SmartClinic.Services
             var slots = new List<TimeSlotDto>();
             var startDateTime = date.Date + doctor.StartTime;
             var endDateTime = date.Date + doctor.EndTime;
-            var slotDuration = TimeSpan.FromMinutes(30);
+            var slotDuration = TimeSpan.FromMinutes(30); // Default for standard appointments
 
             for (var current = startDateTime; current < endDateTime; current += slotDuration)
             {
+                // Skip break time
                 if (doctor.BreakStartTime.HasValue && doctor.BreakEndTime.HasValue)
                 {
                     var breakStart = date.Date + doctor.BreakStartTime.Value;
@@ -154,6 +155,13 @@ namespace SmartClinic.Services
                 }
 
                 var slotEnd = current + slotDuration;
+
+                // Skip if remaining time is insufficient for any appointment type
+                if (slotEnd > endDateTime ||
+                    (doctor.BreakStartTime.HasValue && slotEnd > date.Date + doctor.BreakStartTime.Value))
+                    continue;
+
+                // Check for overlapping appointments
                 bool isOverlapping = appointments.Any(a =>
                     a.StartTime < slotEnd && a.EndTime > current);
 
@@ -164,8 +172,41 @@ namespace SmartClinic.Services
                         StartTime = current,
                         EndTime = slotEnd
                     });
+
+                    // Add 60-minute slot if sufficient time remains
+                    var extendedEnd = current + TimeSpan.FromMinutes(60);
+                    if (extendedEnd <= endDateTime &&
+                        (!doctor.BreakStartTime.HasValue || extendedEnd <= date.Date + doctor.BreakStartTime.Value) &&
+                        !appointments.Any(a => a.StartTime < extendedEnd && a.EndTime > current))
+                    {
+                        slots.Add(new TimeSlotDto
+                        {
+                            StartTime = current,
+                            EndTime = extendedEnd
+                        });
+                    }
+
+                    // Add 15-minute emergency slot
+                    var emergencyEnd = current + TimeSpan.FromMinutes(15);
+                    if (emergencyEnd <= endDateTime &&
+                        (!doctor.BreakStartTime.HasValue || emergencyEnd <= date.Date + doctor.BreakStartTime.Value) &&
+                        !appointments.Any(a => a.StartTime < emergencyEnd && a.EndTime > current))
+                    {
+                        slots.Add(new TimeSlotDto
+                        {
+                            StartTime = current,
+                            EndTime = emergencyEnd
+                        });
+                    }
                 }
             }
+
+            // Remove duplicate slots and sort
+            slots = slots
+                .GroupBy(s => (s.StartTime, s.EndTime))
+                .Select(g => g.First())
+                .OrderBy(s => s.StartTime)
+                .ToList();
 
             return new DoctorAvailabilityDto
             {

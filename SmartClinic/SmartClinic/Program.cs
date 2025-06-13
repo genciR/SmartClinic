@@ -2,8 +2,10 @@
 using Microsoft.EntityFrameworkCore;
 using SmartClinic.Data;
 using SmartClinic.Repositories;
+using SmartClinic.Repository;
 using SmartClinic.Services;
 using System.Text.Json.Serialization;
+using Scalar.AspNetCore;
 
 namespace SmartClinic
 {
@@ -25,6 +27,14 @@ namespace SmartClinic
             options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
             builder.Services.AddScoped<IDoctorRepository, DoctorRepository>();
             builder.Services.AddScoped<IDoctorService, DoctorService>();
+            builder.Services.AddScoped<IAppointmentService, AppointmentService>();
+            builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+            builder.Services.AddLogging(logging =>
+            {
+                logging.AddConsole();
+                logging.SetMinimumLevel(LogLevel.Debug);
+            });
+
             builder.Services.AddOpenApi();
 
             var app = builder.Build();
@@ -32,6 +42,8 @@ namespace SmartClinic
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
+                app.MapScalarApiReference();
+
                 app.MapOpenApi();
             }
 

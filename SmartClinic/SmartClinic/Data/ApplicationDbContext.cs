@@ -14,6 +14,7 @@ namespace SmartClinic.Data
         public DbSet<User> Users { get; set; }
         public DbSet<Doctor> Doctors { get; set; }
         public DbSet<Appointment> Appointments { get; set; }
+        public DbSet<Patient> Patients { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Doctor>()
@@ -24,7 +25,7 @@ namespace SmartClinic.Data
                 .WithOne()
                 .HasForeignKey<Doctor>(d => d.UserId);
 
-            // Configure WorkingDays as JSONB
+            // WorkingDays as JSONB
             modelBuilder.Entity<Doctor>()
                   .Property(d => d.WorkingDays)
                   .HasColumnType("jsonb")
@@ -44,6 +45,13 @@ namespace SmartClinic.Data
             // Optional: Add indexes for performance
             modelBuilder.Entity<Appointment>()
                 .HasIndex(a => new { a.DoctorId, a.StartTime });
+            modelBuilder.Entity<Patient>()
+                .HasKey(p => p.PatientId);
+
+            modelBuilder.Entity<Patient>()
+                .HasOne(p => p.User)
+                .WithOne()
+                .HasForeignKey<Patient>(p => p.UserId);
         }
 
     }

@@ -56,11 +56,13 @@ namespace SmartClinic.Repositories
 
         public async Task<List<Appointment>> GetAppointmentsByDoctorAndDateAsync(Guid doctorId, DateTime date)
         {
-            return await _context.Appointments
-                .Where(a => a.DoctorId == doctorId
-                    && a.StartTime.Date == date.Date
-                    && a.Status != AppointmentStatus.Cancelled)
-                .ToListAsync();
+            var dateUtc = date.Kind == DateTimeKind.Unspecified
+        ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc)
+        : date.Date.ToUniversalTime();
+
+    return await _context.Appointments
+        .Where(a => a.DoctorId == doctorId && a.StartTime.Date == dateUtc)
+        .ToListAsync();
         }
     }
 }
