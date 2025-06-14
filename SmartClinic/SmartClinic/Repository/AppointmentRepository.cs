@@ -1,13 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SmartClinic.Data;
 using SmartClinic.Models.Entities;
-using SmartClinic.Repository;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace SmartClinic.Repositories
+namespace SmartClinic.Repository
 {
     public class AppointmentRepository : IAppointmentRepository
     {
@@ -15,48 +14,64 @@ namespace SmartClinic.Repositories
 
         public AppointmentRepository(ApplicationDbContext context)
         {
-            _context = context;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
-        public async Task<Appointment?> GetAppointmentByIdAsync(Guid appointmentId)
+        public async Task<Appointment?> GetAppointmentByIdAsync(Guid id)
         {
-            return await _context.Appointments.FindAsync(appointmentId);
+            return await _context.Appointments
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.AppointmentId == id);
         }
 
         public async Task<List<Appointment>> GetAppointmentsByDoctorAndDateAsync(Guid doctorId, DateTime date)
         {
-            var dateUtc = date.Kind == DateTimeKind.Unspecified
-         ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc)
-         : date.Date.ToUniversalTime();
-
+            var startOfDay = date.Date;
+            var endOfDay = startOfDay.AddDays(1);
             return await _context.Appointments
-                .Where(a => a.DoctorId == doctorId
-                    && a.StartTime.Date == dateUtc
-                    && a.Status != AppointmentStatus.Cancelled)
+                .AsNoTracking()
+                .Where(a => a.DoctorId == doctorId && a.StartTime >= startOfDay && a.StartTime < endOfDay)
                 .ToListAsync();
         }
 
-        public async Task<List<Appointment>> GetAppointmentsByPatientAndDateAsync(Guid patientId, DateTime date)
+        public async Task<List<Appointment>> GetAppointmentsByPatientIdAsync(Guid patientId)
         {
-            var dateUtc = date.Kind == DateTimeKind.Unspecified
-        ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc)
-        : date.Date.ToUniversalTime();
             return await _context.Appointments
-                .Where(a => a.PatientId == patientId
-                    && a.StartTime.Date == dateUtc
-                    && a.Status != AppointmentStatus.Cancelled)
+                .AsNoTracking()
+                .Where(a => a.PatientId == patientId)
                 .ToListAsync();
         }
 
         public async Task AddAppointmentAsync(Appointment appointment)
         {
-            _context.Appointments.Add(appointment);
-            await _context.SaveChangesAsync();
+            if (appointment == null)
+                throw new ArgumentNullException(nameof(appointment));
+
+            try
+            {
+                await _context.Appointments.AddAsync(appointment);
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                throw new InvalidOperationException("Failed to add appointment.", ex);
+            }
         }
 
-        public async Task<bool> PatientExistsAsync(Guid patientId)
+        public async Task UpdateAppointmentAsync(Appointment appointment)
         {
-            return await _context.Patients.AnyAsync(p => p.PatientId == patientId);
+            if (appointment == null)
+                throw new ArgumentNullException(nameof(appointment));
+
+            try
+            {
+                _context.Appointments.Update(appointment);
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                throw new InvalidOperationException("Failed to update appointment.", ex);
+            }
         }
     }
 }

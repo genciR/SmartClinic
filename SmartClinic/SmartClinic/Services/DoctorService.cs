@@ -1,6 +1,7 @@
-﻿using SmartClinic.Models.DTOs;
+﻿using AutoMapper;
+using SmartClinic.Models.DTOs;
 using SmartClinic.Models.Entities;
-using SmartClinic.Repositories;
+using SmartClinic.Repository;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,208 +12,146 @@ namespace SmartClinic.Services
     public class DoctorService : IDoctorService
     {
         private readonly IDoctorRepository _doctorRepository;
+        private readonly IAppointmentRepository _appointmentRepository;
+        private readonly IMapper _mapper;
+        private readonly ILogger<DoctorService> _logger;
 
-        public DoctorService(IDoctorRepository doctorRepository)
+        public DoctorService(IDoctorRepository doctorRepository, IAppointmentRepository appointmentRepository, IMapper mapper, ILogger<DoctorService> logger)
         {
             _doctorRepository = doctorRepository;
+            _appointmentRepository = appointmentRepository;
+            _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<DoctorDto> CreateDoctorAsync(DoctorCreateDto createDto)
         {
-            var user = new User
-            {
-                Id = Guid.NewGuid(),
-                FirstName = createDto.FirstName,
-                LastName = createDto.LastName,
-                Email = createDto.Email,
-                PasswordHash = "hashed_password", // Placeholder
-                Role = Role.Doctor,
-                CreatedAt = DateTime.UtcNow
-            };
+            _logger.LogDebug("Creating doctor with Specialization: {Specialization}", createDto.Specialization);
 
-            var doctor = new Doctor
-            {
-                DoctorId = Guid.NewGuid(),
-                UserId = user.Id,
-                Specialization = createDto.Specialization,
-                WorkingDays = createDto.WorkingDays,
-                StartTime = createDto.StartTime,
-                EndTime = createDto.EndTime,
-                BreakStartTime = createDto.BreakStartTime,
-                BreakEndTime = createDto.BreakEndTime,
-                User = user
-            };
+            var doctor = _mapper.Map<Doctor>(createDto);
+            doctor.DoctorId = Guid.NewGuid();
+            doctor.UserId = Guid.NewGuid(); // Placeholder; adjust based on user creation
 
             await _doctorRepository.AddDoctorAsync(doctor);
-
-            return new DoctorDto
-            {
-                DoctorId = doctor.DoctorId,
-                Name = $"{user.FirstName} {user.LastName}",
-                Specialization = doctor.Specialization,
-                WorkingDays = doctor.WorkingDays,
-                StartTime = doctor.StartTime,
-                EndTime = doctor.EndTime,
-                BreakStartTime = doctor.BreakStartTime,
-                BreakEndTime = doctor.BreakEndTime
-            };
+            return _mapper.Map<DoctorDto>(doctor);
         }
 
-        public async Task<DoctorDto?> GetDoctorByIdAsync(Guid id)
+        public async Task<DoctorDto> GetDoctorByIdAsync(Guid id)
         {
+            _logger.LogDebug("Fetching doctor with DoctorId: {DoctorId}", id);
+
             var doctor = await _doctorRepository.GetDoctorByIdAsync(id);
             if (doctor == null)
-                return null;
+                throw new ArgumentException("Doctor not found.");
 
-            return new DoctorDto
-            {
-                DoctorId = doctor.DoctorId,
-                Name = $"{doctor.User.FirstName} {doctor.User.LastName}",
-                Specialization = doctor.Specialization,
-                WorkingDays = doctor.WorkingDays,
-                StartTime = doctor.StartTime,
-                EndTime = doctor.EndTime,
-                BreakStartTime = doctor.BreakStartTime,
-                BreakEndTime = doctor.BreakEndTime
-            };
+            return _mapper.Map<DoctorDto>(doctor);
         }
 
-        public async Task<IEnumerable<DoctorDto>> GetAllDoctorsAsync()
+        public async Task<List<DoctorDto>> GetAllDoctorsAsync()
         {
+            _logger.LogDebug("Fetching all doctors");
+
             var doctors = await _doctorRepository.GetAllDoctorsAsync();
-            return doctors.Select(d => new DoctorDto
-            {
-                DoctorId = d.DoctorId,
-                Name = $"{d.User.FirstName} {d.User.LastName}",
-                Specialization = d.Specialization,
-                WorkingDays = d.WorkingDays,
-                StartTime = d.StartTime,
-                EndTime = d.EndTime,
-                BreakStartTime = d.BreakStartTime,
-                BreakEndTime = d.BreakEndTime
-            });
+            return _mapper.Map<List<DoctorDto>>(doctors);
         }
 
-        public async Task<DoctorDto?> UpdateDoctorAsync(Guid id, DoctorUpdateDto updateDto)
+        public async Task<DoctorDto> UpdateDoctorAsync(Guid id, DoctorUpdateDto updateDto)
         {
+            _logger.LogDebug("Updating doctor with DoctorId: {DoctorId}", id);
+
             var doctor = await _doctorRepository.GetDoctorByIdAsync(id);
             if (doctor == null)
-                return null;
+                throw new ArgumentException("Doctor not found.");
 
-            doctor.Specialization = updateDto.Specialization;
-            doctor.WorkingDays = updateDto.WorkingDays;
-            doctor.StartTime = updateDto.StartTime;
-            doctor.EndTime = updateDto.EndTime;
-            doctor.BreakStartTime = updateDto.BreakStartTime;
-            doctor.BreakEndTime = updateDto.BreakEndTime;
-
+            _mapper.Map(updateDto, doctor);
             await _doctorRepository.UpdateDoctorAsync(doctor);
-
-            return new DoctorDto
-            {
-                DoctorId = doctor.DoctorId,
-                Name = $"{doctor.User.FirstName} {doctor.User.LastName}",
-                Specialization = doctor.Specialization,
-                WorkingDays = doctor.WorkingDays,
-                StartTime = doctor.StartTime,
-                EndTime = doctor.EndTime,
-                BreakStartTime = doctor.BreakStartTime,
-                BreakEndTime = doctor.BreakEndTime
-            };
+            return _mapper.Map<DoctorDto>(doctor);
         }
 
         public async Task<bool> DeleteDoctorAsync(Guid id)
         {
+            _logger.LogDebug("Deleting doctor with DoctorId: {DoctorId}", id);
+
             return await _doctorRepository.DeleteDoctorAsync(id);
         }
 
         public async Task<DoctorAvailabilityDto> GetDoctorAvailabilityAsync(Guid doctorId, DateTime date)
         {
+            _logger.LogDebug("Fetching availability for DoctorId: {DoctorId} on Date: {Date}", doctorId, date);
+
             var doctor = await _doctorRepository.GetDoctorByIdAsync(doctorId);
             if (doctor == null)
-                throw new KeyNotFoundException($"Doctor with ID {doctorId} not found.");
+                throw new ArgumentException("Doctor not found.");
 
-            var dayOfWeek = date.DayOfWeek;
-            if (!doctor.WorkingDays.Contains(dayOfWeek))
-                return new DoctorAvailabilityDto { Date = date.Date, AvailableSlots = new List<TimeSlotDto>() };
+            var utcDate = date.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(date.Date, DateTimeKind.Utc)
+                : date.Date.ToUniversalTime();
 
-            var appointments = await _doctorRepository.GetAppointmentsByDoctorAndDateAsync(doctorId, date);
+            if (!doctor.WorkingDays.Contains(utcDate.DayOfWeek))
+                return new DoctorAvailabilityDto { Date = utcDate, AvailableSlots = new List<TimeSlotDto>() };
 
-            var slots = new List<TimeSlotDto>();
-            var startDateTime = date.Date + doctor.StartTime;
-            var endDateTime = date.Date + doctor.EndTime;
-            var slotDuration = TimeSpan.FromMinutes(30); // Default for standard appointments
+            var appointments = await _appointmentRepository.GetAppointmentsByDoctorAndDateAsync(doctorId, utcDate);
+            var availableSlots = GenerateAvailableSlots(doctor, utcDate, appointments);
 
-            for (var current = startDateTime; current < endDateTime; current += slotDuration)
+            return new DoctorAvailabilityDto
             {
-                // Skip break time
-                if (doctor.BreakStartTime.HasValue && doctor.BreakEndTime.HasValue)
-                {
-                    var breakStart = date.Date + doctor.BreakStartTime.Value;
-                    var breakEnd = date.Date + doctor.BreakEndTime.Value;
-                    if (current >= breakStart && current < breakEnd)
-                        continue;
-                }
+                Date = utcDate,
+                AvailableSlots = availableSlots
+            };
+        }
 
-                var slotEnd = current + slotDuration;
+        private List<TimeSlotDto> GenerateAvailableSlots(Doctor doctor, DateTime date, List<Appointment> appointments)
+        {
+            var slots = new List<TimeSlotDto>();
+            var startHour = TimeSpan.FromHours(9); // Default working hours
+            var endHour = TimeSpan.FromHours(17);
+            var breakStart = TimeSpan.FromHours(12);
+            var breakEnd = TimeSpan.FromHours(13);
 
-                // Skip if remaining time is insufficient for any appointment type
-                if (slotEnd > endDateTime ||
-                    (doctor.BreakStartTime.HasValue && slotEnd > date.Date + doctor.BreakStartTime.Value))
+            var standardExtendedCount = appointments.Count(a => a.Status != AppointmentStatus.Cancelled && (a.Type == AppointmentType.Standard || a.Type == AppointmentType.Extended));
+            var emergencyCount = appointments.Count(a => a.Status != AppointmentStatus.Cancelled && a.Type == AppointmentType.Emergency);
+
+            for (var time = startHour; time < endHour; time += TimeSpan.FromMinutes(15))
+            {
+                if (time >= breakStart && time < breakEnd)
                     continue;
 
-                // Check for overlapping appointments
-                bool isOverlapping = appointments.Any(a =>
-                    a.StartTime < slotEnd && a.EndTime > current);
+                var slotStart = date.Add(time);
+                if (slotStart < DateTime.UtcNow)
+                    continue;
 
-                if (!isOverlapping)
+                // Standard (30 min)
+                if (standardExtendedCount < 8)
                 {
-                    slots.Add(new TimeSlotDto
+                    var slotEnd = slotStart.AddMinutes(30);
+                    if (slotEnd <= date.Add(endHour) && !appointments.Any(a => a.Status != AppointmentStatus.Cancelled && a.StartTime < slotEnd && a.EndTime > slotStart))
                     {
-                        StartTime = current,
-                        EndTime = slotEnd
-                    });
-
-                    // Add 60-minute slot if sufficient time remains
-                    var extendedEnd = current + TimeSpan.FromMinutes(60);
-                    if (extendedEnd <= endDateTime &&
-                        (!doctor.BreakStartTime.HasValue || extendedEnd <= date.Date + doctor.BreakStartTime.Value) &&
-                        !appointments.Any(a => a.StartTime < extendedEnd && a.EndTime > current))
-                    {
-                        slots.Add(new TimeSlotDto
-                        {
-                            StartTime = current,
-                            EndTime = extendedEnd
-                        });
+                        slots.Add(new TimeSlotDto { StartTime = slotStart, EndTime = slotEnd });
                     }
+                }
 
-                    // Add 15-minute emergency slot
-                    var emergencyEnd = current + TimeSpan.FromMinutes(15);
-                    if (emergencyEnd <= endDateTime &&
-                        (!doctor.BreakStartTime.HasValue || emergencyEnd <= date.Date + doctor.BreakStartTime.Value) &&
-                        !appointments.Any(a => a.StartTime < emergencyEnd && a.EndTime > current))
+                // Extended (60 min)
+                if (standardExtendedCount < 8 && time < endHour - TimeSpan.FromMinutes(60))
+                {
+                    var slotEnd = slotStart.AddMinutes(60);
+                    if (slotEnd <= date.Add(endHour) && !appointments.Any(a => a.Status != AppointmentStatus.Cancelled && a.StartTime < slotEnd && a.EndTime > slotStart))
                     {
-                        slots.Add(new TimeSlotDto
-                        {
-                            StartTime = current,
-                            EndTime = emergencyEnd
-                        });
+                        slots.Add(new TimeSlotDto { StartTime = slotStart, EndTime = slotEnd });
+                    }
+                }
+
+                // Emergency (15 min)
+                if (emergencyCount < 2)
+                {
+                    var slotEnd = slotStart.AddMinutes(15);
+                    if (slotEnd <= date.Add(endHour) && !appointments.Any(a => a.Status != AppointmentStatus.Cancelled && a.StartTime < slotEnd && a.EndTime > slotStart))
+                    {
+                        slots.Add(new TimeSlotDto { StartTime = slotStart, EndTime = slotEnd });
                     }
                 }
             }
 
-            // Remove duplicate slots and sort
-            slots = slots
-                .GroupBy(s => (s.StartTime, s.EndTime))
-                .Select(g => g.First())
-                .OrderBy(s => s.StartTime)
-                .ToList();
-
-            return new DoctorAvailabilityDto
-            {
-                Date = date.Date,
-                AvailableSlots = slots
-            };
+            return slots.OrderBy(s => s.StartTime).ToList();
         }
     }
 }

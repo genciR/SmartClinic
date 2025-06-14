@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SmartClinic.Data;
@@ -11,9 +12,11 @@ using SmartClinic.Data;
 namespace SmartClinic.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250613230535_UpdateSchemaaas")]
+    partial class UpdateSchemaaas
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -94,41 +97,6 @@ namespace SmartClinic.Migrations
                     b.ToTable("Doctors");
                 });
 
-            modelBuilder.Entity("SmartClinic.Models.Entities.MedicalHistory", b =>
-                {
-                    b.Property<Guid>("HistoryId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AppointmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Diagnosis")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("DoctorId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Prescriptions")
-                        .HasColumnType("text");
-
-                    b.HasKey("HistoryId");
-
-                    b.HasIndex("AppointmentId");
-
-                    b.HasIndex("DoctorId");
-
-                    b.HasIndex("PatientId");
-
-                    b.ToTable("MedicalHistories");
-                });
-
             modelBuilder.Entity("SmartClinic.Models.Entities.Patient", b =>
                 {
                     b.Property<Guid>("PatientId")
@@ -137,16 +105,6 @@ namespace SmartClinic.Migrations
 
                     b.Property<DateTime>("DateOfBirth")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Gender")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<string>("Phone")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -189,9 +147,6 @@ namespace SmartClinic.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Email")
-                        .IsUnique();
-
                     b.ToTable("Users");
                 });
 
@@ -204,33 +159,6 @@ namespace SmartClinic.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("SmartClinic.Models.Entities.MedicalHistory", b =>
-                {
-                    b.HasOne("SmartClinic.Models.Entities.Appointment", "Appointment")
-                        .WithMany()
-                        .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SmartClinic.Models.Entities.Doctor", "Doctor")
-                        .WithMany()
-                        .HasForeignKey("DoctorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SmartClinic.Models.Entities.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Appointment");
-
-                    b.Navigation("Doctor");
-
-                    b.Navigation("Patient");
                 });
 
             modelBuilder.Entity("SmartClinic.Models.Entities.Patient", b =>

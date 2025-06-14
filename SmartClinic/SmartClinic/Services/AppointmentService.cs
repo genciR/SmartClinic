@@ -1,9 +1,9 @@
-﻿using SmartClinic.Models.DTOs;
+﻿using AutoMapper;
+using SmartClinic.Models.DTOs;
 using SmartClinic.Models.Entities;
-using SmartClinic.Repositories;
 using SmartClinic.Repository;
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace SmartClinic.Services
@@ -12,22 +12,28 @@ namespace SmartClinic.Services
     {
         private readonly IAppointmentRepository _appointmentRepository;
         private readonly IDoctorRepository _doctorRepository;
+        private readonly IPatientRepository _patientRepository;
+        private readonly IMedicalHistoryRepository _medicalHistoryRepository;
+        private readonly IMapper _mapper;
         private readonly int _maxAppointmentsPerDay = 8;
         private readonly int _maxEmergencyAppointmentsPerDay = 2;
         private readonly ILogger<AppointmentService> _logger;
 
-        public AppointmentService(IAppointmentRepository appointmentRepository, IDoctorRepository doctorRepository, ILogger<AppointmentService> logger)
+        public AppointmentService(IAppointmentRepository appointmentRepository, IDoctorRepository doctorRepository, IPatientRepository patientRepository, IMedicalHistoryRepository medicalHistoryRepository, IMapper mapper, ILogger<AppointmentService> logger)
         {
             _appointmentRepository = appointmentRepository;
             _doctorRepository = doctorRepository;
+            _patientRepository = patientRepository;
+            _medicalHistoryRepository = medicalHistoryRepository;
+            _mapper = mapper;
             _logger = logger;
         }
 
         public async Task<AppointmentDto> ScheduleAppointmentAsync(AppointmentCreateDto createDto)
         {
-            _logger.LogDebug("Scheduling appointment for DoctorId: {DoctorId}, PatientId: {PatientId}, StartTime: {StartTime}", createDto.DoctorId, createDto.PatientId, createDto.StartTime);
+            _logger.LogDebug("Scheduling appointment for DoctorId: {DoctorId}, PatientId: {PatientId}, StartTime: {StartTime}",
+                createDto.DoctorId, createDto.PatientId, createDto.StartTime);
 
-            // Ensure StartTime is UTC
             var startTime = createDto.StartTime.Kind == DateTimeKind.Unspecified
                 ? DateTime.SpecifyKind(createDto.StartTime, DateTimeKind.Utc)
                 : createDto.StartTime.ToUniversalTime();
@@ -36,15 +42,21 @@ namespace SmartClinic.Services
             if (doctor == null)
                 throw new ArgumentException("Doctor not found.");
 
-            if (!await _appointmentRepository.PatientExistsAsync(createDto.PatientId))
+            if (!await _patientRepository.PatientExistsAsync(createDto.PatientId))
                 throw new ArgumentException("Patient not found.");
 
             var dayOfWeek = startTime.DayOfWeek;
-            if (!doctor.WorkingDays.Contains((DayOfWeek)(int)dayOfWeek))
+            if (!doctor.WorkingDays.Contains(dayOfWeek))
                 throw new ArgumentException("Doctor is not available on this day.");
 
-            var time = startTime.TimeOfDay;
-            if (time < TimeSpan.FromHours(9) || time >= TimeSpan.FromHours(17) || (time >= TimeSpan.FromHours(12) && time < TimeSpan.FromHours(13)))
+            var startHour = TimeSpan.FromHours(9); // Hardcoded working hours
+            var endHour = TimeSpan.FromHours(17);
+            var breakStart = TimeSpan.FromHours(12);
+            var breakEnd = TimeSpan.FromHours(13);
+
+            var timeOfDay = startTime.TimeOfDay; // TimeSpan
+            if (timeOfDay < startHour || timeOfDay >= endHour ||
+                (timeOfDay >= breakStart && timeOfDay < breakEnd))
                 throw new InvalidOperationException("Appointment time is outside working hours or during break.");
 
             TimeSpan duration = createDto.Type switch
@@ -57,46 +69,75 @@ namespace SmartClinic.Services
             var endTime = startTime.Add(duration);
 
             var existingAppointments = await _appointmentRepository.GetAppointmentsByDoctorAndDateAsync(createDto.DoctorId, startTime);
-            if (existingAppointments.Any(a => a.StartTime < endTime && a.EndTime > startTime))
+            if (existingAppointments.Any(a => a.StartTime < endTime && a.EndTime > startTime && a.Status != AppointmentStatus.Cancelled))
                 throw new InvalidOperationException("Requested time slot is already booked.");
 
             var standardExtendedCount = existingAppointments.Count(a => a.Type == AppointmentType.Standard || a.Type == AppointmentType.Extended);
             var emergencyCount = existingAppointments.Count(a => a.Type == AppointmentType.Emergency);
-            if ((createDto.Type == AppointmentType.Standard || createDto.Type == AppointmentType.Extended) && standardExtendedCount >= 8)
+            if ((createDto.Type == AppointmentType.Standard || createDto.Type == AppointmentType.Extended) && standardExtendedCount >= _maxAppointmentsPerDay)
                 throw new InvalidOperationException("Doctor has reached maximum standard/extended appointments.");
-            if (createDto.Type == AppointmentType.Emergency && emergencyCount >= 2)
+            if (createDto.Type == AppointmentType.Emergency && emergencyCount >= _maxEmergencyAppointmentsPerDay)
                 throw new InvalidOperationException("Doctor has reached maximum emergency appointments.");
 
             if (existingAppointments.Any(a => a.PatientId == createDto.PatientId))
                 throw new InvalidOperationException("Patient already has an appointment with this doctor.");
 
-            var appointment = new Appointment
-            {
-                AppointmentId = Guid.NewGuid(),
-                PatientId = createDto.PatientId,
-                DoctorId = createDto.DoctorId,
-                StartTime = startTime,
-                EndTime = endTime,
-                Status = AppointmentStatus.Scheduled,
-                Type = createDto.Type,
-                Notes = createDto.Notes
-            };
+            var appointment = _mapper.Map<Appointment>(createDto);
+            appointment.AppointmentId = Guid.NewGuid();
+            appointment.StartTime = startTime;
+            appointment.EndTime = endTime;
+            appointment.Status = AppointmentStatus.Scheduled;
 
             await _appointmentRepository.AddAppointmentAsync(appointment);
             _logger.LogInformation("Appointment created: {AppointmentId}", appointment.AppointmentId);
 
-            return new AppointmentDto
-            {
-                AppointmentId = appointment.AppointmentId,
-                PatientId = appointment.PatientId,
-                DoctorId = appointment.DoctorId,
-                StartTime = appointment.StartTime,
-                EndTime = appointment.EndTime,
-                Status = appointment.Status,
-                Type = appointment.Type,
-                Notes = appointment.Notes
-            };
+            return _mapper.Map<AppointmentDto>(appointment);
         }
 
+        public async Task<List<AppointmentDto>> GetAppointmentsByPatientIdAsync(Guid patientId)
+        {
+            _logger.LogDebug("Fetching appointments for PatientId: {PatientId}", patientId);
+
+            if (!await _patientRepository.PatientExistsAsync(patientId))
+                throw new ArgumentException("Patient not found.");
+
+            var appointments = await _appointmentRepository.GetAppointmentsByPatientIdAsync(patientId);
+            return _mapper.Map<List<AppointmentDto>>(appointments);
+        }
+
+        public async Task<AppointmentDto> UpdateAppointmentStatusAsync(AppointmentStatusUpdateDto updateDto)
+        {
+            _logger.LogDebug("Updating status for AppointmentId: {AppointmentId} to {Status}",
+                updateDto.AppointmentId, updateDto.Status);
+
+            var appointment = await _appointmentRepository.GetAppointmentByIdAsync(updateDto.AppointmentId);
+            if (appointment == null)
+                throw new ArgumentException("Appointment not found.");
+
+            if (updateDto.Status == AppointmentStatus.Cancelled)
+            {
+                if (appointment.StartTime < DateTime.UtcNow.AddHours(24))
+                    throw new InvalidOperationException("Cannot cancel appointment less than 24 hours before start time.");
+            }
+
+            appointment.Status = updateDto.Status;
+            await _appointmentRepository.UpdateAppointmentAsync(appointment);
+
+            if (updateDto.Status == AppointmentStatus.Completed)
+            {
+                var medicalHistory = new MedicalHistory
+                {
+                    HistoryId = Guid.NewGuid(),
+                    PatientId = appointment.PatientId,
+                    DoctorId = appointment.DoctorId,
+                    AppointmentId = appointment.AppointmentId,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _medicalHistoryRepository.AddMedicalHistoryAsync(medicalHistory);
+                _logger.LogInformation("Medical history created for AppointmentId: {AppointmentId}", appointment.AppointmentId);
+            }
+
+            return _mapper.Map<AppointmentDto>(appointment);
+        }
     }
 }
